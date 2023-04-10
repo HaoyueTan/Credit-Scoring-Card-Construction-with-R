@@ -20,4 +20,4 @@ Sometimes, less is more. Decision tree model to me is quite like the MBTI person
 - Use ROC to evaluate the model
 
 
-Organized info shown in the slides
+Organized info shown in the my partial [slides](https://github.com/HaoyueTan/Credit-Scoring-Card-Construction-with-R/blob/main/FIN6120%20Slides_H.pptx)
