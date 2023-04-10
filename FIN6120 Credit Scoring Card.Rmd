@@ -1,0 +1,264 @@
+---
+title: "FIN6120 Credit Scoring Card"
+author: "Haoyue Heather Tan"
+date: "3/31/2022"
+output: pdf_document
+---
+
+# Insert data
+```{r}
+library(dplyr)
+df <- read.csv("credit_data.csv")
+#glimpse(df)
+#summary(df)
+```
+
+```{r}
+library(glmmTMB) 
+y <- as.factor(df$Creditability)
+accbl <- as.factor(df$Account.Balance)
+pmt <- as.factor(df$Payment.Status.of.Previous.Credit)
+value <- as.factor(df$Value.Savings.Stocks)
+cEmp <- as.factor(df$Length.of.current.employment)
+instpct <- as.factor(df$Instalment.per.cent)
+marrital <- as.factor(df$Sex...Marital.Status)
+mValue <- as.factor(df$Most.valuable.available.asset)
+age <- df$Age..years.
+cCre <- as.factor(df$Concurrent.Credits)
+foreign <- as.factor(df$Foreign.Worker)
+library(dplyr)
+duration <- ntile(df$Duration.of.Credit..month, 4)  
+#duration <- df$Duration.of.Credit..month.
+df <- data.frame(y, accbl,pmt, value,cEmp, instpct, marrital,mValue,age, cCre,foreign,duration)
+#df
+
+#unselcted parameters
+#credit_amount <- df$Credit.Amount
+#cAdd <-as.factor(df$Duration.in.Current.address)
+```
+
+```{r}
+set.seed(221010071) 
+library(dplyr)
+dt = sort(sample(nrow(df), nrow(df)*.7))
+df$y <- as.factor(df$y)
+#df
+
+#group split
+levels(df$y) <- c("Not_Default", "Default")
+train<-df[dt,]
+test<-df[-dt,]
+
+table(train$y)
+table(test$y)
+
+prop.table(table(train$y))
+prop.table(table(test$y))
+```
+# GLMM model 1 - with all available parameters
+```{r}
+#model 1 - everything
+model <- lme4::glmer(as.factor(y) ~ accbl + pmt + value + instpct + marrital +mValue + age + cCre  + mValue + duration +foreign + (1 |cEmp), family = binomial, data = train)
+# summary(model)
+```
+
+```{r}
+# model projection on training group
+result_train <- predict(model, newdata = train, type = 'response')
+trainresult <- data.frame(result_train)
+#trainresult
+#boxplot(result_train, df = trainresult)
+
+train_c <- data.frame(train$y, trainresult$result_train)
+#train_c
+
+# box plot of prediction on actual
+x <- train_c$train.y
+y <- train_c$trainresult.result_train
+boxplot(y~x)
+ 
+# choose proper threshold for default group
+library(dplyr)
+default <- train_c %>% filter( train_c$train.y == 'Default')
+n_default <- train_c %>% filter( train_c$train.y == 'Not_Default')
+
+#d_ll <- median(default$trainresult.result1) 
+d_ll <- quantile(default$trainresult.result_train, .25)
+nd_ul <- median(n_default$trainresult.result_train)
+
+#d_ll
+#nd_ul
+```
+
+```{r}
+# model projection on test group
+result_test <- predict(model, newdata = test, type = 'response')
+testresult <- data.frame(result_test)
+#boxplot(result_test, df = testresult)
+
+# default determination projection on test group
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$predict_y <- ifelse(result_test >= d_ll,'Default','Not_Default')
+test_c$pred_power <- test_c$test.y == test_c$predict_y
+
+#view power of the model
+table(test_c$test.y,test_c$pred_power)
+library(ROSE)
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+
+The Area Under the ROC curve (AUC) is an aggregated metric that evaluates how well a logistic regression model classifies positive and negative outcomes at all possible cutoffs. It can range from 0.5 to 1, and the larger it is the better.
+
+```{r}
+GLMM1 <- glmmTMB(as.factor(y) ~ accbl + pmt + value + instpct + marrital +mValue + age + cCre  + mValue + duration + (1 |cEmp) , data = df, family = binomial(link = 'logit'))
+summary(GLMM1)
+Pmisc::ranefPlot(GLMM1, grpvar = "cEmp", level = 0.9, maxNames = 12)
+```
+# GLMM model 2 - with selected parameters
+
+```{r}
+#model 2 - selected
+model <- lme4::glmer(as.factor(y) ~ age  + value + duration + (1 |cEmp) ,family = binomial, data = train) 
+```
+
+```{r}
+result_train <- predict(model, newdata = train, type = 'response')
+trainresult <- data.frame(result_train)
+
+train_c <- data.frame(train$y, trainresult$result_train)
+x <- train_c$train.y
+y <- train_c$trainresult.result_train
+boxplot(y~x)
+
+default <- train_c %>% filter( train_c$train.y == 'Default')
+n_default <- train_c %>% filter( train_c$train.y == 'Not_Default')
+
+#d_ll <- median(default$trainresult.result1) 
+d_ll <- quantile(default$trainresult.result_train, .5)
+nd_ul <- median(n_default$trainresult.result_train)
+
+# model projection on test group
+result_test <- predict(model, newdata = test, type = 'response')
+testresult <- data.frame(result_test)
+#boxplot(result_test, df = testresult)
+
+# default determination projection on test group
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$predict_y <- ifelse(result_test >= d_ll,'Default','Not_Default')
+test_c$pred_power <- test_c$test.y == test_c$predict_y
+
+#view power of the model
+table(test_c$test.y,test_c$pred_power)
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+```{r}
+GLMM2 <- glmmTMB(as.factor(y) ~ age  + value + duration + (1 |cEmp) , data = df, family = binomial(link = 'logit'))
+summary(GLMM2)
+install.packages("Pmisc", repos = "http://R-Forge.R-project.org", type = "source")
+Pmisc::ranefPlot(GLMM2, grpvar = "cEmp", level = 0.90, maxNames = 12)
+```
+
+# GLMM LASSO
+```
+#install.packages("glmnet", repos = "https://cran.us.r-project.org")
+#library(glmnet)
+
+#GLMM3 <- glmnet(as.factor(y) ~ accbl + pmt + value + instpct + marrital  + age + cCre  + mValue + duration + (1 |cEmp))
+
+#train
+table(!is.na(train))
+
+library(glmmLasso)
+GLMM3 <- glmmLasso(y ~ accbl + pmt + value + instpct + marrital+ age + cCre  + mValue + duration +foreign, rnd = list(cEmp = ~1), data = train, lambda = 5, family = binomial(link = logit))
+
+plot(GLMM3)
+```
+
+
+# Decision tree selection (model arrange in accending AUC)
+## Decision tree model 1 with all available parameters
+```{r}
+library(C50)
+model <- C5.0(train$y~. ,data = train)
+summary(model)
+#train
+
+png("decision_tree1.png", width = 3000, height = 800)
+plot(model)
+dev.off()
+knitr::include_graphics("decision_tree1.png")
+
+result_test <- predict(model, newdata = test, trails = 100, type = 'class')
+testresult <- data.frame(result_test)
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$pred_power <- test_c$test.y == test_c$testresult.result_test
+table(test_c$test.y,test_c$pred_power)
+
+library(ROSE)
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+
+## Decision tree model 2 with selected variables(from model 1)
+```{r}
+model2 <- C5.0(train$y~ value+pmt+cCre+mValue+marrital+age+instpct+accbl ,data = train)
+#summary(model)
+
+png("decision_tree2.png", width = 1600, height = 800)
+plot(model2)
+dev.off()
+
+knitr::include_graphics("decision_tree2.png")
+
+result_test <- predict(model2, newdata = test, trails = 100, type = 'class')
+testresult <- data.frame(result_test)
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$pred_power <- test_c$test.y == test_c$testresult.result_test
+table(test_c$test.y,test_c$pred_power)
+
+library(ROSE)
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+
+## Decision tree model 3
+```{r}
+model3 <- C5.0(train$y~ accbl + duration + value + pmt + age ,data = train)
+#summary(model)
+
+png("decision_tree3.png", width = 1600, height = 800)
+plot(model3)
+dev.off()
+
+knitr::include_graphics("decision_tree3.png")
+
+result_test <- predict(model3, newdata = test, trails = 100, type = 'class')
+testresult <- data.frame(result_test)
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$pred_power <- test_c$test.y == test_c$testresult.result_test
+table(test_c$test.y,test_c$pred_power)
+
+library(ROSE)
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+## Decision tree model 4 with selected variables(optimal)
+Based on model 1, subtrees in marital, value and age have good performance, and therefore they are obtained for further modelling.
+```{r}
+model4 <- C5.0(train$y~ marrital +value+age +pmt ,data = train)
+#summary(model)
+
+png("decision_tree4.png", width = 1600, height = 800)
+plot(model4)
+dev.off()
+
+knitr::include_graphics("decision_tree4.png")
+
+result_test <- predict(model4, newdata = test, trails = 100, type = 'class')
+testresult <- data.frame(result_test)
+test_c <- data.frame(test$y, testresult$result_test)
+test_c$pred_power <- test_c$test.y == test_c$testresult.result_test
+table(test_c$test.y,test_c$pred_power)
+table(test_c$testresult.result_test,test_c$pred_power)
+
+roc.curve(test_c$test.y,test_c$pred_power,plotit = TRUE)
+```
+
+
